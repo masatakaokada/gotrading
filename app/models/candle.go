@@ -73,12 +73,14 @@ func CreateCandleWithDuration(ticker bitflyer.Ticker, productCode string, durati
 		return true
 	}
 
+	// 高値や安値を更新する
 	if currentCandle.High <= price {
 		currentCandle.High = price
 	} else if currentCandle.Low >= price {
 		currentCandle.Low = price
 	}
 	currentCandle.Volume += ticker.Volume
+	// 終値を更新する
 	currentCandle.Close = price
 	currentCandle.Save()
 	return false

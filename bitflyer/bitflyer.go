@@ -126,6 +126,7 @@ type Ticker struct {
 	VolumeByProduct float64 `json:"volume_by_product"`
 }
 
+// Bid(ビットコインを買いたい人の値段)とAsk(ビットコインを売りたい人の値段)の中央値を取得する
 func (t *Ticker) GetMidPrice() float64 {
 	return (t.BestBid + t.BestAsk) / 2
 }
