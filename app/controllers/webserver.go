@@ -128,10 +128,21 @@ func apiCandleHandler(w http.ResponseWriter, r *http.Request) {
 		df.AddBBands(n, float64(k))
 	}
 
-	// 一目均衡表(Ichimoku)
+	// 一目均衡表 (Ichimoku)
 	ichimoku := r.URL.Query().Get("ichimoku")
 	if ichimoku != "" {
 		df.AddIchimoku()
+	}
+
+	// 相対力指数(RSI、Relative Strength Index)
+	rsi := r.URL.Query().Get("rsi")
+	if rsi != "" {
+		strPeriod := r.URL.Query().Get("rsiPeriod")
+		period, err := strconv.Atoi(strPeriod)
+		if strPeriod == "" || err != nil || period < 0 {
+			period = 14
+		}
+		df.AddRsi(period)
 	}
 
 	js, err := json.Marshal(df)
