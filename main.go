@@ -1,15 +1,17 @@
 package main
 
 import (
-	"fmt"
-	"gotrading/app/models"
-	"time"
+	"gotrading/app/controllers"
+	"gotrading/config"
+	"gotrading/utils"
+	"log"
 )
 
-// func main() {
-// 	utils.LoggingSettings(config.Config.LogFile)
-// 	controllers.StreamIngestionData()
-// 	controllers.StartWebServer()
+func main() {
+	utils.LoggingSettings(config.Config.LogFile)
+	controllers.StreamIngestionData()
+	log.Println(controllers.StartWebServer())
+}
 
 // apiClient := bitflyer.New(config.Config.ApiKey, config.Config.ApiSecret)
 
@@ -44,19 +46,18 @@ import (
 // }
 // r, _ := apiClient.ListOrder(params)
 // fmt.Println(r)
-// }
 
-func main() {
-	s := models.NewSignalEvents()
-	df, _ := models.GetAllCandle("BTC_JPY", time.Minute, 10)
-	c1 := df.Candles[0]
-	c2 := df.Candles[5]
-	s.Buy("BTC_JPY", c1.Time.UTC(), c1.Close, 1.0, true)
-	s.Sell("BTC_JPY", c2.Time.UTC(), c2.Close, 1.0, true)
-	// 最新の取引１件だけ取得
-	fmt.Println(models.GetSignalEventsByCount(1))
-	// 現在時刻以降に取引されたレコードを取得
-	fmt.Println(s.CollectAfter(time.Now().UTC()))
-	// c1以降に取引されたレコードを取得
-	fmt.Println(s.CollectAfter(c1.Time))
-}
+// func main() {
+// 	s := models.NewSignalEvents()
+// 	df, _ := models.GetAllCandle("BTC_JPY", time.Minute, 10)
+// 	c1 := df.Candles[0]
+// 	c2 := df.Candles[5]
+// 	s.Buy("BTC_JPY", c1.Time.UTC(), c1.Close, 1.0, true)
+// 	s.Sell("BTC_JPY", c2.Time.UTC(), c2.Close, 1.0, true)
+// 	// 最新の取引１件だけ取得
+// 	fmt.Println(models.GetSignalEventsByCount(1))
+// 	// 現在時刻以降に取引されたレコードを取得
+// 	fmt.Println(s.CollectAfter(time.Now().UTC()))
+// 	// c1以降に取引されたレコードを取得
+// 	fmt.Println(s.CollectAfter(c1.Time))
+// }
