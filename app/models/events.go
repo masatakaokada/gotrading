@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"gotrading/config"
 	"log"
@@ -81,4 +82,114 @@ func GetSignalEventsAfterTime(timeTime time.Time) *SignalEvents {
 		signalEvents.Signals = append(signalEvents.Signals, signalEvent)
 	}
 	return &signalEvents
+}
+
+func (s *SignalEvents) CanBuy(time time.Time) bool {
+	lenSignals := len(s.Signals)
+	if lenSignals == 0 {
+		return true
+	}
+	lastSignal := s.Signals[lenSignals-1]
+	if lastSignal.Side == "SELL" && lastSignal.Time.Before(time) {
+		return true
+	}
+	return false
+}
+
+func (s *SignalEvents) CanSell(time time.Time) bool {
+	lenSignals := len(s.Signals)
+	if lenSignals == 0 {
+		return false
+	}
+	lastSignal := s.Signals[lenSignals-1]
+	if lastSignal.Side == "BUY" && lastSignal.Time.Before(time) {
+		return true
+	}
+	return false
+}
+
+func (s *SignalEvents) Buy(ProductCode string, time time.Time, price, size float64, save bool) bool {
+	if !s.CanBuy(time) {
+		return false
+	}
+	signalEvent := SignalEvent{
+		ProductCode: ProductCode,
+		Time:        time,
+		Side:        "BUY",
+		Price:       price,
+		Size:        size,
+	}
+	if save {
+		signalEvent.Save()
+	}
+	s.Signals = append(s.Signals, signalEvent)
+	return true
+}
+
+func (s *SignalEvents) Sell(ProductCode string, time time.Time, price, size float64, save bool) bool {
+	if !s.CanSell(time) {
+		return false
+	}
+	signalEvent := SignalEvent{
+		ProductCode: ProductCode,
+		Time:        time,
+		Side:        "SELL",
+		Price:       price,
+		Size:        size,
+	}
+	if save {
+		signalEvent.Save()
+	}
+	s.Signals = append(s.Signals, signalEvent)
+	return true
+}
+
+func (s *SignalEvents) Profit() float64 {
+	total := 0.0
+	// 売る前の損益値の一時保存用。買った後だとtotalがマイナスになってしまうため
+	beforeSell := 0.0
+	isHolding := false
+	for i, signalEvent := range s.Signals {
+		if i == 0 && signalEvent.Side == "SELL" {
+			continue
+		}
+		if signalEvent.Side == "BUY" {
+			total -= signalEvent.Price * signalEvent.Size
+			isHolding = true
+		}
+		if signalEvent.Side == "SELL" {
+			total += signalEvent.Price * signalEvent.Size
+			isHolding = false
+			beforeSell = total
+		}
+	}
+	if isHolding {
+		return beforeSell
+	}
+	return total
+}
+
+func (s SignalEvents) MarshalJSON() ([]byte, error) {
+	value, err := json.Marshal(&struct {
+		Signals []SignalEvent `json:"signals,omitempty"`
+		Profit  float64       `json:"profit,omitempty"`
+	}{
+		Signals: s.Signals,
+		Profit:  s.Profit(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// 特定の時間以降のSignalsを取得
+func (s *SignalEvents) CollectAfter(time time.Time) *SignalEvents {
+	for i, signal := range s.Signals {
+		if time.After(signal.Time) {
+			continue
+		}
+		return &SignalEvents{Signals: s.Signals[i:]}
+	}
+	return nil
 }
