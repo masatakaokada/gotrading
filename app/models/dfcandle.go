@@ -129,7 +129,7 @@ func (df *DataFrameCandle) AddEma(period int) bool {
 	if len(df.Candles) > period {
 		df.Emas = append(df.Emas, Ema{
 			Period: period,
-			Values: talib.Ema(df.Closes(), period),
+			Values: talib.Ema(df.Closes(), period), // 終わり値のスライスとどの期間で計算するかを入れる
 		})
 		return true
 	}
@@ -213,4 +213,30 @@ func (df *DataFrameCandle) AddEvents(timeTime time.Time) bool {
 		return true
 	}
 	return false
+}
+
+func (df *DataFrameCandle) BackTestEma(period1, period2 int) *SignalEvents {
+	lenCandles := len(df.Candles)
+	if lenCandles <= period1 || lenCandles <= period2 {
+		return nil
+	}
+	signalEvents := NewSignalEvents()
+	emaValue1 := talib.Ema(df.Closes(), period1)
+	emaValue2 := talib.Ema(df.Closes(), period2)
+
+	for i := 1; i < lenCandles; i++ {
+		// emaValueに値が入っていないため飛ばす
+		if i < period1 || i < period2 {
+			continue
+		}
+		// 7と14の期間で前日の7が下にあって、当日の7が14を追い越した場合
+		if emaValue1[i-1] < emaValue2[i-1] && emaValue1[i] >= emaValue2[i] {
+			signalEvents.Buy(df.ProductCode, df.Candles[i].Time, df.Candles[i].Close, 1.0, false)
+		}
+		// 7と14の期間で前日の7が上にあって、当日の14が7を追い越した場合
+		if emaValue1[i-1] > emaValue2[i-1] && emaValue1[i] <= emaValue2[i] {
+			signalEvents.Sell(df.ProductCode, df.Candles[i].Time, df.Candles[i].Close, 1.0, false)
+		}
+	}
+	return signalEvents
 }
