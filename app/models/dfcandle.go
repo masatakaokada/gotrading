@@ -240,3 +240,24 @@ func (df *DataFrameCandle) BackTestEma(period1, period2 int) *SignalEvents {
 	}
 	return signalEvents
 }
+
+func (df *DataFrameCandle) OptimizeEma() (performance float64, bestPeriod1 int, bestPeriod2 int) {
+	bestPeriod1 = 7
+	bestPeriod2 = 14
+
+	for period1 := 5; period1 < 50; period1++ {
+		for period2 := 12; period2 < 50; period2++ {
+			signalEvents := df.BackTestEma(period1, period2)
+			if signalEvents == nil {
+				continue
+			}
+			profit := signalEvents.Profit()
+			if performance < profit {
+				performance = profit
+				bestPeriod1 = period1
+				bestPeriod2 = period2
+			}
+		}
+	}
+	return performance, bestPeriod1, bestPeriod2
+}
