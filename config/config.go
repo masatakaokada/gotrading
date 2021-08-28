@@ -23,7 +23,7 @@ type ConfigList struct {
 	BackTest         bool
 	UsePercent       float64
 	DataLimit        int
-	DtopLimitPercent float64
+	StopLimitPercent float64
 	NumRanking       int
 }
 
@@ -55,7 +55,7 @@ func init() {
 		BackTest:         cfg.Section("gotrading").Key("back_test").MustBool(),
 		UsePercent:       cfg.Section("gotrading").Key("use_percent").MustFloat64(),
 		DataLimit:        cfg.Section("gotrading").Key("data_limit").MustInt(),
-		DtopLimitPercent: cfg.Section("gotrading").Key("dtop_limit_percent").MustFloat64(),
+		StopLimitPercent: cfg.Section("gotrading").Key("stop_limit_percent").MustFloat64(),
 		NumRanking:       cfg.Section("gotrading").Key("num_ranking").MustInt(),
 	}
 }
