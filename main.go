@@ -49,11 +49,11 @@ func main() {
 
 // func main() {
 // 	s := models.NewSignalEvents()
-// 	df, _ := models.GetAllCandle("BTC_JPY", time.Minute, 10)
+// 	df, _ := models.GetAllCandle("BTC_USD", time.Minute, 10)
 // 	c1 := df.Candles[0]
 // 	c2 := df.Candles[5]
-// 	s.Buy("BTC_JPY", c1.Time.UTC(), c1.Close, 1.0, true)
-// 	s.Sell("BTC_JPY", c2.Time.UTC(), c2.Close, 1.0, true)
+// 	s.Buy("BTC_USD", c1.Time.UTC(), c1.Close, 1.0, true)
+// 	s.Sell("BTC_USD", c2.Time.UTC(), c2.Close, 1.0, true)
 // 	// 最新の取引１件だけ取得
 // 	fmt.Println(models.GetSignalEventsByCount(1))
 // 	// 現在時刻以降に取引されたレコードを取得
