@@ -6,11 +6,17 @@ import (
 	"gotrading/config"
 	"gotrading/tradingalgo"
 	"log"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/markcheno/go-talib"
 	"golang.org/x/sync/semaphore"
+)
+
+const (
+	// 0.12パーセントの取引手数料がかかる
+	ApiFeePercent = 0.0012
 )
 
 type AI struct {
@@ -57,14 +63,19 @@ func NewAI(productCode string, duration time.Duration, pastPeriod int, usePercen
 		StartTrade:       time.Now().UTC(),
 		StopLimitPercent: stopLimitPercent,
 	}
-	Ai.UpdateOptimizeParams()
+	Ai.UpdateOptimizeParams(false)
 	return Ai
 }
 
-func (ai *AI) UpdateOptimizeParams() {
+func (ai *AI) UpdateOptimizeParams(isContinue bool) {
 	df, _ := models.GetAllCandle(ai.ProductCode, ai.Duration, ai.PastPeriod)
 	ai.OptimizedTradeParams = df.OptimizeParams()
 	log.Printf("optimized_trade_params=%+v", ai.OptimizedTradeParams)
+	if ai.OptimizedTradeParams == nil && isContinue && !ai.BackTest {
+		log.Print("status_no_params")
+		time.Sleep(10 * ai.Duration)
+		ai.UpdateOptimizeParams(isContinue)
+	}
 }
 
 func (ai *AI) Buy(candle models.Candle) (childOrderAcceptanceId string, isOrderCompleted bool) {
@@ -72,7 +83,48 @@ func (ai *AI) Buy(candle models.Candle) (childOrderAcceptanceId string, isOrderC
 		couldBuy := ai.SignalEvents.Buy(ai.ProductCode, candle.Time, candle.Close, 1.0, false)
 		return "", couldBuy
 	}
-	// TODO
+	// 売買しようとする時間より実際にスタートした時間が後の場合、
+	// 前の時間のものを買おうとしているためreturn
+	if ai.StartTrade.After(candle.Time) {
+		return
+	}
+	if !ai.SignalEvents.CanBuy(candle.Time) {
+		return
+	}
+
+	availableCurrency, _ := ai.GetAvailableBalance()
+	useCurrency := availableCurrency * ai.UsePercent
+	ticker, err := ai.API.GetTicker(ai.ProductCode)
+	if err != nil {
+		return
+	}
+	// 1 / (購入金額 / 使えるお金)
+	size := 1 / (ticker.BestAsk / useCurrency)
+	size = ai.AdjustSize(size)
+
+	order := &bitflyer.Order{
+		ProductCode:     ai.ProductCode,
+		ChildOrderType:  "MARKET",
+		Side:            "BUY",
+		Size:            size,
+		MinuteToExpires: ai.MinuteToExpires,
+		TimeInForce:     "GTC",
+	}
+	log.Printf("status=order candle=%+v order=%+v", candle, order)
+
+	resp, err := ai.API.SendOrder(order)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	if resp.ChildOrderAcceptanceID == "" {
+		// Insufficient fund(お金が足りなくて買えなかった場合)
+		log.Printf("order=%+v status=no_id", order)
+		return
+	}
+	childOrderAcceptanceId = resp.ChildOrderAcceptanceID
+
+	isOrderCompleted = ai.WaitUntilOrderComplete(childOrderAcceptanceId, candle.Time)
 	return childOrderAcceptanceId, isOrderCompleted
 }
 
@@ -81,7 +133,40 @@ func (ai *AI) Sell(candle models.Candle) (childOrderAcceptanceId string, isOrder
 		couldSell := ai.SignalEvents.Sell(ai.ProductCode, candle.Time, candle.Close, 1.0, false)
 		return "", couldSell
 	}
-	// TODO
+	// 売買しようとする時間より実際にスタートした時間が後の場合、
+	// 前の時間のものを買おうとしているためreturn
+	if ai.StartTrade.After(candle.Time) {
+		return
+	}
+	if !ai.SignalEvents.CanSell(candle.Time) {
+		return
+	}
+
+	_, availableCoin := ai.GetAvailableBalance()
+	size := ai.AdjustSize(availableCoin)
+
+	order := &bitflyer.Order{
+		ProductCode:     ai.ProductCode,
+		ChildOrderType:  "MARKET",
+		Side:            "SELL",
+		Size:            size,
+		MinuteToExpires: ai.MinuteToExpires,
+		TimeInForce:     "GTC",
+	}
+	log.Printf("status=order candle=%+v order=%+v", candle, order)
+
+	resp, err := ai.API.SendOrder(order)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	if resp.ChildOrderAcceptanceID == "" {
+		// Insufficient fund(売るためのビットコインが足りない場合)
+		log.Printf("order=%+v status=no_id", order)
+		return
+	}
+	childOrderAcceptanceId = resp.ChildOrderAcceptanceID
+	isOrderCompleted = ai.WaitUntilOrderComplete(childOrderAcceptanceId, candle.Time)
 	return childOrderAcceptanceId, isOrderCompleted
 }
 
@@ -94,6 +179,9 @@ func (ai *AI) Trade() {
 	}
 	defer ai.TradeSemaphore.Release(1)
 	params := ai.OptimizedTradeParams
+	if params == nil {
+		return
+	}
 	df, _ := models.GetAllCandle(ai.ProductCode, ai.Duration, ai.PastPeriod)
 	lenCandles := len(df.Candles)
 
@@ -196,7 +284,75 @@ func (ai *AI) Trade() {
 				continue
 			}
 			ai.StopLimit = 0.0
-			ai.UpdateOptimizeParams()
+			ai.UpdateOptimizeParams(true) // 見つかるまで探す
 		}
 	}
+}
+
+// アカウントに入っているUSDとビットコインの数を返す
+func (ai *AI) GetAvailableBalance() (availableCurrency, availableCoin float64) {
+	balances, err := ai.API.GetBalance()
+	if err != nil {
+		return
+	}
+	for _, balance := range balances {
+		if balance.CurrentCode == ai.CurrencyCode {
+			availableCurrency = balance.Available
+		} else if balance.CurrentCode == ai.CoinCode {
+			availableCoin = balance.Available
+		}
+	}
+	return availableCurrency, availableCoin
+}
+
+// 取引手数料を引いて売買できるように桁数を切り捨てる
+func (ai *AI) AdjustSize(size float64) float64 {
+	fee := size * ApiFeePercent
+	size = size - fee
+	return math.Floor(size*10000) / 10000
+}
+
+// ChildOrderAcceptanceIDと実際に取引した時間を使って取引が正常に終了したかを確認
+func (ai *AI) WaitUntilOrderComplete(childOrderAcceptanceID string, executeTime time.Time) bool {
+	params := map[string]string{
+		"product_code":              ai.ProductCode,
+		"child_order_acceptance_id": childOrderAcceptanceID,
+	}
+	// 1分20秒確認する
+	expire := time.After(time.Minute + (20 * time.Second))
+	interval := time.Tick(15 * time.Second)
+	return func() bool {
+		for {
+			select {
+			case <-expire:
+				return false
+			case <-interval:
+				listOrders, err := ai.API.ListOrder(params)
+				if err != nil {
+					return false
+				}
+				if len(listOrders) == 0 {
+					return false
+				}
+				order := listOrders[0]
+				if order.ChildOrderState == "COMPLETED" {
+					if order.Side == "BUY" {
+						couldBuy := ai.SignalEvents.Buy(ai.ProductCode, executeTime, order.AveragePrice, order.Size, true)
+						if !couldBuy {
+							log.Printf("status=buy childOrderAcceptanceID=%s order=%+v", childOrderAcceptanceID, order)
+						}
+						return couldBuy
+					}
+					if order.Side == "SELL" {
+						couldSell := ai.SignalEvents.Sell(ai.ProductCode, executeTime, order.AveragePrice, order.Size, true)
+						if !couldSell {
+							log.Printf("status=sell childOrderAcceptanceID=%s order=%+v", childOrderAcceptanceID, order)
+						}
+						return couldSell
+					}
+					return false
+				}
+			}
+		}
+	}()
 }
